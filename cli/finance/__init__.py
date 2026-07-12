@@ -1,0 +1,1 @@
+"""finance CLI package"""

@@ -1,0 +1,13 @@
+.env
+node_modules/
+web/.next/
+web/node_modules/
+api/__pycache__/
+api/**/__pycache__/
+api/.venv/
+cli/.venv/
+*.pyc
+logs/
+.DS_Store
+*.log
+.pids/
