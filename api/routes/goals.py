@@ -1,9 +1,11 @@
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
 from database import get_db
+from logging_config import logger
 from models import Category, Goal, RecurringBill, Rule
 from schemas import (
     GoalCreate,
@@ -84,6 +86,22 @@ def create_bill(data: RecurringBillCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(b)
     return b
+
+
+@bills_router.post("/materialize")
+def materialize_bills(
+    month: Optional[str] = None,
+    adjust_balance: bool = False,
+    db: Session = Depends(get_db),
+):
+    """将指定月份定期账单落成支出流水（默认不改账户余额）。"""
+    from datetime import date as _date
+
+    from services.finance import materialize_recurring_for_month
+
+    target = month or _date.today().strftime("%Y-%m")
+    logger.info("API 落账定期账单 month=%s adjust_balance=%s", target, adjust_balance)
+    return materialize_recurring_for_month(db, target, adjust_balance=adjust_balance)
 
 
 rules_router = APIRouter(prefix="/api/rules", tags=["rules"])

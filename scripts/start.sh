@@ -74,19 +74,24 @@ for pidfile in .pids/api.pid .pids/web.pid; do
   fi
 done
 
-echo "[start] 启动 FastAPI (port 8000)..."
-cd api && ../api/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --reload > "$ROOT/logs/api.log" 2>&1 &
-echo $! > "$ROOT/.pids/api.pid"
+API_PORT="${API_PORT:-9011}"
+WEB_PORT="${WEB_PORT:-5011}"
 
-echo "[start] 启动 Next.js (port 3000)..."
-cd web && npm run dev > "$ROOT/logs/web.log" 2>&1 &
+echo "[start] 启动 FastAPI (port $API_PORT)..."
+cd api && nohup ../api/.venv/bin/uvicorn main:app --host 127.0.0.1 --port "$API_PORT" --reload >> "$ROOT/logs/api.log" 2>&1 &
+echo $! > "$ROOT/.pids/api.pid"
+disown
+
+echo "[start] 启动 Next.js (port $WEB_PORT)..."
+cd "$ROOT/web" && nohup npm run dev -- -p "$WEB_PORT" >> "$ROOT/logs/web.log" 2>&1 &
 echo $! > "$ROOT/.pids/web.pid"
+disown
 
 sleep 3
 echo ""
 echo "[start] FlowLedger 已启动（本地模式）"
 echo "  数据库: postgresql://localhost:5432/flowledger"
-echo "  Web:    http://localhost:3000"
-echo "  API:    http://localhost:8000"
-echo "  Docs:   http://localhost:8000/docs"
+echo "  Web:    http://localhost:$WEB_PORT"
+echo "  API:    http://localhost:$API_PORT"
+echo "  Docs:   http://localhost:$API_PORT/docs"
 echo "  日志:   logs/api.log  logs/web.log"

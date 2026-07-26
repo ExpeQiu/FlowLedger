@@ -40,6 +40,12 @@ class AccountOut(BaseModel):
     balance: Decimal
     currency: str
     created_at: datetime
+    # 投资账户扩展：balance = holdings_mv + cash
+    is_invest: bool = False
+    holdings_mv: Optional[Decimal] = None
+    cash: Optional[Decimal] = None
+    holdings_count: Optional[int] = None
+    invest_ok: Optional[bool] = None
 
 
 class CategoryCreate(BaseModel):
@@ -295,8 +301,43 @@ class ImportResultOut(BaseModel):
     status: ImportStatus
 
 
+class InvestAccountCheck(BaseModel):
+    account_id: UUID
+    account_name: str
+    account_type: str
+    balance: Decimal
+    holdings_mv: Decimal
+    cash: Decimal
+    ok: bool
+    issues: list[str] = []
+
+
+class InvestValidationOut(BaseModel):
+    ok: bool
+    accounts: list[InvestAccountCheck]
+    orphan_holdings: int = 0
+
+
+class DailyPnlPoint(BaseModel):
+    date: str
+    day: str
+    daily_pnl: float
+    daily_pnl_pct: float
+    total_asset: float
+
+
+class MonthlyDailyPnlOut(BaseModel):
+    month: str
+    days: list[DailyPnlPoint]
+    total_pnl: float
+    up_days: int
+    down_days: int
+
+
 class PortfolioSummary(BaseModel):
     total_value: Decimal
+    holdings_value: Decimal = Decimal("0")
+    cash_balance: Decimal = Decimal("0")
     total_cost: Decimal
     profit: Decimal
     profit_pct: float
@@ -304,6 +345,7 @@ class PortfolioSummary(BaseModel):
     max_concentration: float
     holdings: list[HoldingOut]
     rebalance: list[dict]
+    validation_ok: bool = True
 
 
 class CashFlowForecast(BaseModel):

@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9011";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
@@ -21,6 +21,7 @@ export const api = {
   dashboard: (month?: string) =>
     request<Dashboard>(`/api/dashboard${month ? `?month=${month}` : ""}`),
   accounts: () => request<Account[]>("/api/accounts"),
+  accountsNetWorth: () => request<{ net_worth: number }>("/api/accounts/net-worth"),
   createAccount: (data: Partial<Account>) =>
     request<Account>("/api/accounts", { method: "POST", body: JSON.stringify(data) }),
   deleteAccount: (id: string) =>
@@ -38,6 +39,11 @@ export const api = {
     request<Budget>("/api/budgets", { method: "POST", body: JSON.stringify(data) }),
   holdings: () => request<Holding[]>("/api/holdings"),
   portfolioSummary: () => request<PortfolioSummary>("/api/holdings/summary"),
+  dailyPnl: (month?: string) =>
+    request<MonthlyDailyPnl>(`/api/holdings/daily-pnl${month ? `?month=${month}` : ""}`),
+  validateInvestAccounts: () => request<InvestValidation>("/api/holdings/validate"),
+  syncFromInvest: () =>
+    request<Record<string, unknown>>("/api/holdings/sync-from-invest", { method: "POST" }),
   createHolding: (data: Record<string, unknown>) =>
     request<Holding>("/api/holdings", { method: "POST", body: JSON.stringify(data) }),
   liabilities: () => request<Liability[]>("/api/liabilities"),
@@ -82,6 +88,11 @@ export interface Account {
   type: string;
   balance: number;
   currency: string;
+  is_invest?: boolean;
+  holdings_mv?: number;
+  cash?: number;
+  holdings_count?: number;
+  invest_ok?: boolean;
 }
 
 export interface Category {
@@ -129,6 +140,8 @@ export interface Holding {
 
 export interface PortfolioSummary {
   total_value: number;
+  holdings_value?: number;
+  cash_balance?: number;
   total_cost: number;
   profit: number;
   profit_pct: number;
@@ -136,6 +149,36 @@ export interface PortfolioSummary {
   max_concentration: number;
   holdings: Holding[];
   rebalance: { type: string; actual_pct: number; target_pct: number }[];
+  validation_ok?: boolean;
+}
+
+export interface MonthlyDailyPnl {
+  month: string;
+  days: {
+    date: string;
+    day: string;
+    daily_pnl: number;
+    daily_pnl_pct: number;
+    total_asset: number;
+  }[];
+  total_pnl: number;
+  up_days: number;
+  down_days: number;
+}
+
+export interface InvestValidation {
+  ok: boolean;
+  orphan_holdings: number;
+  accounts: {
+    account_id: string;
+    account_name: string;
+    account_type: string;
+    balance: number;
+    holdings_mv: number;
+    cash: number;
+    ok: boolean;
+    issues: string[];
+  }[];
 }
 
 export interface Liability {

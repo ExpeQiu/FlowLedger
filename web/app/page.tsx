@@ -40,10 +40,10 @@ export default function DashboardPage() {
         actions={actions}
       >
         <div className="grid grid-cols-4 gap-4">
-          <MetricCard label="净资产" sub="当前" value={fmt(data.net_worth)} delta="+2.8%" />
+          <MetricCard label="净资产" sub="当前" value={fmt(data.net_worth)} />
           <MetricCard label="本月支出" sub="已发生" value={fmt(data.monthly_expense)} delta={`预算 ${data.budget_usage_pct}%`} deltaVariant="warn" />
-          <MetricCard label="投资收益" sub="近 30 天" value={fmt(data.investment_return)} delta="+1.6%" />
-          <MetricCard label="现金流" sub="本月" value={fmt(data.cash_flow)} delta="健康" />
+          <MetricCard label="投资浮盈" sub="持仓未实现" value={fmt(data.investment_return)} />
+          <MetricCard label="现金流" sub="本月" value={fmt(data.cash_flow)} />
         </div>
 
         <div className="grid gap-4 mt-4" style={{ gridTemplateColumns: "1.45fr 0.75fr" }}>

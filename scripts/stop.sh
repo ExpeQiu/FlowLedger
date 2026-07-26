@@ -15,5 +15,9 @@ for pidfile in .pids/api.pid .pids/web.pid; do
   fi
 done
 
+# 兜底：清理残留进程
+pkill -f "$ROOT/api/.venv/bin/uvicorn main:app" 2>/dev/null || true
+pkill -f "$ROOT/web/node_modules/.bin/next dev" 2>/dev/null || true
+
 docker compose stop postgres 2>/dev/null || true
 echo "[stop] FlowLedger 已停止"

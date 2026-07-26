@@ -83,17 +83,29 @@ export default function ExpensesPage() {
               </tr>
             </thead>
             <tbody>
-              {txs.map((t) => (
-                <tr key={t.id} className="border-b border-[var(--line)]">
-                  <td className="p-3">{t.date.slice(5)}</td>
-                  <td className="p-3">{t.merchant || t.note || "-"}</td>
-                  <td className="p-3"><span className={tagClass("amber")}>{t.category_name || "-"}</span></td>
-                  <td className="p-3">{t.account_name || "-"}</td>
-                  <td className={`p-3 text-right font-bold amount-value ${t.type === "income" ? "text-[var(--green)]" : "text-[var(--red)]"}`}>
-                    {t.type === "income" ? "+" : "-"}{fmt(t.amount)}
+              {txs.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="p-8 text-center text-[var(--muted)]">
+                    {filter === "expense"
+                      ? "暂无支出流水。若有定期账单，可在总览落账或手动记一笔。"
+                      : filter === "income"
+                        ? "暂无收入流水"
+                        : "暂无流水记录"}
                   </td>
                 </tr>
-              ))}
+              ) : (
+                txs.map((t) => (
+                  <tr key={t.id} className="border-b border-[var(--line)]">
+                    <td className="p-3">{t.date.slice(5)}</td>
+                    <td className="p-3">{t.merchant || t.note || "-"}</td>
+                    <td className="p-3"><span className={tagClass("amber")}>{t.category_name || "-"}</span></td>
+                    <td className="p-3">{t.account_name || "-"}</td>
+                    <td className={`p-3 text-right font-bold amount-value ${t.type === "income" ? "text-[var(--green)]" : "text-[var(--red)]"}`}>
+                      {t.type === "income" ? "+" : "-"}{fmt(t.amount)}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </article>

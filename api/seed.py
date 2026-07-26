@@ -44,10 +44,11 @@ def seed():
 
         accounts = [
             Account(name="工商储蓄卡", type=AccountType.bank, balance=Decimal("150000")),
-            Account(name="招商信用卡", type=AccountType.credit, balance=Decimal("0")),
+            Account(name="招商信用卡", type=AccountType.credit, balance=Decimal("-8500")),
             Account(name="支付宝", type=AccountType.alipay, balance=Decimal("5000")),
             Account(name="微信支付", type=AccountType.wechat, balance=Decimal("2000")),
-            Account(name="券商账户", type=AccountType.broker, balance=Decimal("50000")),
+            # balance = 持仓市值 321285 + 闲置现金 30000
+            Account(name="券商账户", type=AccountType.broker, balance=Decimal("351285")),
         ]
         db.add_all(accounts)
         db.flush()

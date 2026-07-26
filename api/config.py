@@ -6,7 +6,9 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     database_url: str = "postgresql://flowledger:flowledger@localhost:5432/flowledger"
-    api_url: str = "http://localhost:8000"
+    # 投资权威库（lcteam.positions / position_snapshots）
+    invest_database_url: str = "postgresql://qiubin@localhost:5432/invest"
+    api_url: str = "http://localhost:9011"
     log_level: str = "INFO"
     log_dir: Path = Path(__file__).resolve().parent.parent / "logs"
 

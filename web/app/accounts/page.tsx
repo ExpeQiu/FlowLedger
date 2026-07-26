@@ -7,22 +7,29 @@ import { api, fmt, type Account, type Liability } from "@/lib/api";
 
 const ACCOUNT_TYPES = ["cash", "bank", "credit", "alipay", "wechat", "broker", "fund"];
 const LIABILITY_TYPES = ["credit_card", "mortgage", "loan", "installment"];
+const TYPE_LABEL: Record<string, string> = {
+  cash: "现金", bank: "银行", credit: "信用卡", alipay: "支付宝", wechat: "微信",
+  broker: "券商", fund: "基金账户",
+};
 
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [liabilities, setLiabilities] = useState<Liability[]>([]);
+  const [netWorth, setNetWorth] = useState<number | null>(null);
   const [accForm, setAccForm] = useState({ name: "", type: "bank", balance: "0" });
   const [liaForm, setLiaForm] = useState({ name: "", type: "credit_card", principal: "0", min_payment: "0", due_date: "" });
 
   const load = () => {
     api.accounts().then(setAccounts).catch((e) => toast.error(e.message));
     api.liabilities().then(setLiabilities).catch(() => {});
+    api.accountsNetWorth().then((r) => setNetWorth(Number(r.net_worth))).catch(() => setNetWorth(null));
   };
 
   useEffect(() => { load(); }, []);
 
   const totalAssets = accounts.reduce((s, a) => s + Number(a.balance), 0);
   const totalLiabilities = liabilities.reduce((s, l) => s + Number(l.principal), 0);
+  const investAccounts = accounts.filter((a) => a.is_invest);
 
   const createAccount = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,28 +57,54 @@ export default function AccountsPage() {
   };
 
   return (
-    <AppShell title="账户与负债" subtitle="管理现金、银行卡、信用卡及负债">
+    <AppShell title="账户与负债" subtitle="投资账户余额 = 持仓市值 + 闲置现金">
       <div className="grid grid-cols-3 gap-4 mb-4">
-        <MetricCard label="总资产" sub="账户余额" value={fmt(totalAssets)} />
+        <MetricCard label="账户合计" sub="含投资总资产" value={fmt(totalAssets)} />
         <MetricCard label="总负债" sub="待还" value={fmt(totalLiabilities)} deltaVariant="danger" delta="需关注" />
-        <MetricCard label="净资产" sub="资产-负债" value={fmt(totalAssets - totalLiabilities)} />
+        <MetricCard label="净资产" sub="与总览同口径" value={fmt(netWorth ?? totalAssets)} />
       </div>
+
+      {investAccounts.length > 0 && (
+        <article className="card p-4 mb-4">
+          <h3 className="m-0 mb-4 text-[15px]">投资账户拆分</h3>
+          {investAccounts.map((a) => (
+            <div key={a.id} className="py-3 border-b border-[var(--line)] last:border-0">
+              <div className="flex justify-between mb-1">
+                <strong>{a.name}</strong>
+                <span className="font-bold amount-value">{fmt(a.balance)}</span>
+              </div>
+              <div className="text-xs text-[var(--muted)] flex gap-4 flex-wrap">
+                <span>持仓市值 {fmt(a.holdings_mv ?? 0)}</span>
+                <span>闲置现金 {fmt(a.cash ?? 0)}</span>
+                <span>{a.holdings_count ?? 0} 只标的</span>
+                {a.invest_ok === false && <span className="text-[var(--red)]">余额与持仓不一致</span>}
+              </div>
+            </div>
+          ))}
+        </article>
+      )}
 
       <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
         <article className="card p-4">
           <h3 className="m-0 mb-4 text-[15px]">账户列表</h3>
           {accounts.map((a) => (
             <div key={a.id} className="flex justify-between py-2 border-b border-[var(--line)]">
-              <div><strong>{a.name}</strong><div className="text-xs text-[var(--muted)]">{a.type}</div></div>
+              <div>
+                <strong>{a.name}</strong>
+                <div className="text-xs text-[var(--muted)]">
+                  {TYPE_LABEL[a.type] || a.type}
+                  {a.is_invest ? " · 总资产" : ""}
+                </div>
+              </div>
               <span className="font-bold amount-value">{fmt(a.balance)}</span>
             </div>
           ))}
           <form className="grid gap-2 mt-4" onSubmit={createAccount}>
             <input className="field" placeholder="账户名称" value={accForm.name} onChange={(e) => setAccForm({ ...accForm, name: e.target.value })} required />
             <select className="field" value={accForm.type} onChange={(e) => setAccForm({ ...accForm, type: e.target.value })}>
-              {ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              {ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t] || t}</option>)}
             </select>
-            <input className="field" type="number" placeholder="余额" value={accForm.balance} onChange={(e) => setAccForm({ ...accForm, balance: e.target.value })} />
+            <input className="field" type="number" placeholder={accForm.type === "broker" || accForm.type === "fund" ? "总资产（现金+持仓）" : "余额"} value={accForm.balance} onChange={(e) => setAccForm({ ...accForm, balance: e.target.value })} />
             <button type="submit" className="btn btn-primary">添加账户</button>
           </form>
         </article>

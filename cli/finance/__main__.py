@@ -9,7 +9,7 @@ import httpx
 import typer
 
 app = typer.Typer(help="FlowLedger 个人财务 CLI")
-API_URL = os.getenv("API_URL", "http://localhost:8000")
+API_URL = os.getenv("API_URL", "http://localhost:9011")
 
 
 def client() -> httpx.Client:
@@ -117,9 +117,13 @@ def portfolio_summary(as_of: str = typer.Option("today", "--as-of")):
         r = c.get("/api/holdings/summary")
         r.raise_for_status()
         s = r.json()
-        typer.echo(f"总市值: ¥{s['total_value']}")
-        typer.echo(f"总成本: ¥{s['total_cost']}")
-        typer.echo(f"浮盈: ¥{s['profit']} ({s['profit_pct']}%)")
+        typer.echo(f"投资总资产: ¥{s['total_value']}")
+        typer.echo(f"持仓市值: ¥{s.get('holdings_value', 0)}")
+        typer.echo(f"闲置现金: ¥{s.get('cash_balance', 0)}")
+        typer.echo(f"持仓成本: ¥{s['total_cost']}")
+        typer.echo(f"持仓浮盈: ¥{s['profit']} ({s['profit_pct']}%)")
+        if s.get("validation_ok") is False:
+            typer.echo("警告: 投资账户余额与持仓不一致", err=True)
         for h in s["holdings"]:
             typer.echo(f"  {h['name']}: ¥{h.get('market_value',0)} ({h.get('profit_pct',0)}%)")
 
