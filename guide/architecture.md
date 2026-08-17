@@ -18,6 +18,13 @@ FlowLedger 是本地优先的个人财务管理系统，数据存储在 PostgreS
 
 扩展表：`liabilities`, `recurring_bills`, `rules`, `goals`, `import_jobs`
 
+### 总览支出口径
+
+- **本月支出** = 当月 `transactions(type=expense)` 合计 + **本月到期且尚未落账**的 `recurring_bills`
+- 定期账单默认只作提醒；调用 `POST /api/recurring-bills/materialize` 后写入流水（默认不改账户余额）
+- 落账去重：同月同账户、同金额、同商户名视为已存在，避免与手动记账重复
+- 现金流、趋势图（当前月）、月报与总览同口径
+
 ### 投资账户语义
 
 - `accounts.type` 为 `broker` / `fund` 时，`balance` = **账户总资产**（闲置现金 + 持仓市值）
@@ -52,6 +59,7 @@ flowchart LR
 | CRUD /api/accounts | 账户（投资账户含 holdings_mv/cash 拆分） |
 | GET /api/accounts/net-worth | 净资产（与 Dashboard 同口径） |
 | CRUD /api/transactions | 流水 |
+| GET /api/transactions/transfers | 转账配对明细（转出→转入） |
 | CRUD /api/budgets | 预算 |
 | CRUD /api/holdings | 持仓 |
 | GET /api/holdings/summary | 投资组合（含现金拆分） |
@@ -90,9 +98,13 @@ brew services start postgresql@15
 # 初始化项目
 cp .env.example .env
 chmod +x scripts/*.sh
-./scripts/start.sh    # 自动检测本地 PG、迁移、启动 API + Web
+./scripts/install-autostart.sh   # 登录自启 + KeepAlive（推荐）
+./scripts/start.sh               # 拉起服务（已装 LaunchAgent 则走 launchd）
 ./scripts/verify.sh
+./scripts/stop.sh                # 停止（会 bootout KeepAlive，避免立刻被拉起）
 ```
+
+macOS 启动项为 `com.flowledger.api` / `com.flowledger.web`（`KeepAlive`）。旧版 oneshot `com.flowledger.start` 已废弃，安装脚本会自动卸载。
 
 `start.sh` 默认连接 `postgresql://localhost:5432/flowledger`。若库不存在，会尝试用 `postgres` 超级用户自动创建。
 
@@ -103,3 +115,29 @@ chmod +x scripts/*.sh
 ```bash
 ./scripts/backup.sh
 ```
+
+## 混合部署（阿里云 · 共用 stock-pg）
+
+Web/API 跑在 ECS；数据库复用 stock 的 Docker PG（`stock-pg` · `127.0.0.1:5432`），同实例新建 `flowledger` 库，只读同机 `invest` 做持仓同步。invest 真源仍由 Mac 经 stock 推送。
+
+```mermaid
+flowchart LR
+  User[浏览器] -->|8900| Web[PM2 flowledger-web]
+  Web -->|rewrite| Api[PM2 flowledger-api]
+  Api --> FL[(flowledger)]
+  Api -->|sync-from-invest| Invest[(invest)]
+  Mac[Mac] -->|推库| Invest
+  PG[stock-pg]
+  FL --> PG
+  Invest --> PG
+```
+
+```bash
+# 一键部署
+bash scripts/deploy/deploy-aliyun.sh
+
+# Mac 推业务库到云
+bash scripts/deploy/push-db-to-cloud.sh
+```
+
+运维台账见 [云端运维.md](./云端运维.md)。

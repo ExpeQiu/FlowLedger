@@ -20,6 +20,7 @@ from models import (
     BillFrequency,
     Rule,
     Transaction,
+    TxSource,
     TxType,
 )
 
@@ -59,12 +60,12 @@ def seed():
         period = f"{today.year}-{today.month:02d}"
 
         txs = [
-            Transaction(type=TxType.expense, amount=Decimal("286.40"), date=today, account_id=acc_map["招商信用卡"].id, category_id=cat_map["餐饮"].id, merchant="Ole 超市"),
-            Transaction(type=TxType.expense, amount=Decimal("7.00"), date=today, account_id=acc_map["支付宝"].id, category_id=cat_map["交通"].id, merchant="地铁通勤"),
-            Transaction(type=TxType.expense, amount=Decimal("7300.00"), date=date(today.year, today.month, max(1, today.day - 1)), account_id=acc_map["工商储蓄卡"].id, category_id=cat_map["住房"].id, merchant="房租"),
-            Transaction(type=TxType.income, amount=Decimal("31600.00"), date=date(today.year, today.month, max(1, today.day - 1)), account_id=acc_map["工商储蓄卡"].id, category_id=cat_map["收入"].id, merchant="工资"),
-            Transaction(type=TxType.expense, amount=Decimal("399.00"), date=date(today.year, today.month, max(1, today.day - 2)), account_id=acc_map["招商信用卡"].id, category_id=cat_map["健康"].id, merchant="健身房"),
-            Transaction(type=TxType.expense, amount=Decimal("32.00"), date=date(today.year, today.month, max(1, today.day - 3)), account_id=acc_map["微信支付"].id, category_id=cat_map["餐饮"].id, merchant="咖啡"),
+            Transaction(type=TxType.expense, amount=Decimal("286.40"), date=today, account_id=acc_map["招商信用卡"].id, category_id=cat_map["餐饮"].id, merchant="Ole 超市", source=TxSource.manual),
+            Transaction(type=TxType.expense, amount=Decimal("7.00"), date=today, account_id=acc_map["支付宝"].id, category_id=cat_map["交通"].id, merchant="地铁通勤", source=TxSource.manual),
+            Transaction(type=TxType.expense, amount=Decimal("7300.00"), date=date(today.year, today.month, max(1, today.day - 1)), account_id=acc_map["工商储蓄卡"].id, category_id=cat_map["住房"].id, merchant="房租", source=TxSource.manual),
+            Transaction(type=TxType.income, amount=Decimal("31600.00"), date=date(today.year, today.month, max(1, today.day - 1)), account_id=acc_map["工商储蓄卡"].id, category_id=cat_map["收入"].id, merchant="工资", source=TxSource.manual),
+            Transaction(type=TxType.expense, amount=Decimal("399.00"), date=date(today.year, today.month, max(1, today.day - 2)), account_id=acc_map["招商信用卡"].id, category_id=cat_map["健康"].id, merchant="健身房", source=TxSource.manual),
+            Transaction(type=TxType.expense, amount=Decimal("32.00"), date=date(today.year, today.month, max(1, today.day - 3)), account_id=acc_map["微信支付"].id, category_id=cat_map["餐饮"].id, merchant="咖啡", source=TxSource.manual),
         ]
         db.add_all(txs)
 

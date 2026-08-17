@@ -3,24 +3,36 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.flowledger.start</string>
+    <string>com.flowledger.web</string>
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>__FLOWLEDGER_ROOT__/scripts/autostart.sh</string>
+        <string>__FLOWLEDGER_ROOT__/scripts/daemon-web.sh</string>
     </array>
     <key>WorkingDirectory</key>
     <string>__FLOWLEDGER_ROOT__</string>
     <key>RunAtLoad</key>
     <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+    <key>ProcessType</key>
+    <string>Interactive</string>
     <key>StandardOutPath</key>
-    <string>__FLOWLEDGER_ROOT__/logs/launchd.out.log</string>
+    <string>__FLOWLEDGER_ROOT__/logs/launchd-web.out.log</string>
     <key>StandardErrorPath</key>
-    <string>__FLOWLEDGER_ROOT__/logs/launchd.err.log</string>
+    <string>__FLOWLEDGER_ROOT__/logs/launchd-web.err.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
         <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>__FLOWLEDGER_HOME__</string>
+        <key>API_PORT</key>
+        <string>__FLOWLEDGER_API_PORT__</string>
+        <key>WEB_PORT</key>
+        <string>__FLOWLEDGER_WEB_PORT__</string>
     </dict>
 </dict>
 </plist>

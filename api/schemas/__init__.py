@@ -95,6 +95,23 @@ class TransactionOut(BaseModel):
     category_name: Optional[str] = None
 
 
+class TransferOut(BaseModel):
+    """账户间转账的配对视图（一笔转账对应两条流水）。"""
+
+    transfer_pair_id: UUID
+    date: date
+    amount: Decimal
+    from_account_id: UUID
+    from_account_name: str
+    to_account_id: UUID
+    to_account_name: str
+    note: Optional[str] = None
+    source: TxSource
+    created_at: datetime
+    out_tx_id: UUID
+    in_tx_id: UUID
+
+
 class BudgetCreate(BaseModel):
     category_id: UUID
     period: str
@@ -270,6 +287,8 @@ class AlertItem(BaseModel):
 class DashboardOut(BaseModel):
     net_worth: Decimal
     monthly_expense: Decimal
+    expense_booked: Decimal = Decimal("0")
+    expense_recurring_pending: Decimal = Decimal("0")
     budget_usage_pct: float
     investment_return: Decimal
     cash_flow: Decimal

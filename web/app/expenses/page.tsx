@@ -18,7 +18,12 @@ export default function ExpensesPage() {
     if (filter) params.type = filter;
     if (search) params.search = search;
     Promise.all([api.transactions(params), api.accounts(), api.categories()])
-      .then(([t, a, c]) => { setTxs(t); setAccounts(a); setCategories(c); })
+      .then(([t, a, c]) => {
+        // 转账只在账户页展示；此处再滤一层，避免旧接口混入
+        setTxs(t.filter((x) => x.type !== "transfer"));
+        setAccounts(a);
+        setCategories(c);
+      })
       .catch((e) => toast.error(e.message));
   };
 

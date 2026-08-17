@@ -1,4 +1,7 @@
 .env
+.env.cloud.local
+deploy/.env.pg
+backups/
 node_modules/
 web/.next/
 web/node_modules/

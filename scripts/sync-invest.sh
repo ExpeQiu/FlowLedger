@@ -15,7 +15,17 @@ API_PORT="${API_PORT:-9011}"
 
 echo "=== 同步 invest → flowledger ==="
 if curl -sf "http://127.0.0.1:$API_PORT/health" >/dev/null 2>&1; then
-  curl -sf -X POST "http://127.0.0.1:$API_PORT/api/holdings/sync-from-invest" | python3 -m json.tool
+  BODY="$(mktemp)"
+  CODE="$(curl -sS -o "$BODY" -w "%{http_code}" -X POST "http://127.0.0.1:$API_PORT/api/holdings/sync-from-invest" || true)"
+  if [ "$CODE" != "200" ]; then
+    echo "ERROR: sync-from-invest HTTP $CODE" >&2
+    head -c 2000 "$BODY" >&2 || true
+    echo >&2
+    rm -f "$BODY"
+    exit 1
+  fi
+  python3 -m json.tool <"$BODY"
+  rm -f "$BODY"
 else
   echo "API 未运行，改用本地脚本同步..."
   cd "$ROOT/api"

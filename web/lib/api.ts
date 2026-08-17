@@ -31,6 +31,10 @@ export const api = {
     const q = params ? "?" + new URLSearchParams(params).toString() : "";
     return request<Transaction[]>(`/api/transactions${q}`);
   },
+  transfers: (params?: Record<string, string>) => {
+    const q = params ? "?" + new URLSearchParams(params).toString() : "";
+    return request<Transfer[]>(`/api/transactions/transfers${q}`);
+  },
   createTransaction: (data: Record<string, unknown>) =>
     request<Transaction>("/api/transactions", { method: "POST", body: JSON.stringify(data) }),
   budgets: (period?: string) =>
@@ -53,6 +57,16 @@ export const api = {
   createGoal: (data: Record<string, unknown>) =>
     request<Goal>("/api/goals", { method: "POST", body: JSON.stringify(data) }),
   recurringBills: () => request<RecurringBill[]>("/api/recurring-bills"),
+  materializeRecurring: (month?: string, adjustBalance = false) => {
+    const params = new URLSearchParams();
+    if (month) params.set("month", month);
+    if (adjustBalance) params.set("adjust_balance", "true");
+    const q = params.toString() ? `?${params}` : "";
+    return request<{ month: string; created: number; skipped: number; adjust_balance: boolean }>(
+      `/api/recurring-bills/materialize${q}`,
+      { method: "POST" },
+    );
+  },
   rules: () => request<Rule[]>("/api/rules"),
   createRule: (data: Record<string, unknown>) =>
     request<Rule>("/api/rules", { method: "POST", body: JSON.stringify(data) }),
@@ -73,6 +87,8 @@ export const api = {
 export interface Dashboard {
   net_worth: number;
   monthly_expense: number;
+  expense_booked?: number;
+  expense_recurring_pending?: number;
   budget_usage_pct: number;
   investment_return: number;
   cash_flow: number;
@@ -111,8 +127,24 @@ export interface Transaction {
   category_id?: string;
   merchant?: string;
   note?: string;
+  transfer_pair_id?: string;
   account_name?: string;
   category_name?: string;
+}
+
+export interface Transfer {
+  transfer_pair_id: string;
+  date: string;
+  amount: number;
+  from_account_id: string;
+  from_account_name: string;
+  to_account_id: string;
+  to_account_name: string;
+  note?: string;
+  source: string;
+  created_at: string;
+  out_tx_id: string;
+  in_tx_id: string;
 }
 
 export interface Budget {

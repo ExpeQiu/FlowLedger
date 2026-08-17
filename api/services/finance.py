@@ -58,6 +58,53 @@ def _add_months(d: date, months: int) -> date:
     return date(y, m, min(d.day, monthrange(y, m)[1]))
 
 
+def _expense_tx_matches_bill(db: Session, bill: RecurringBill, start: date, end: date) -> Optional[Transaction]:
+    """同月是否已有对应定期支出流水（金额+商户+账户）。"""
+    if not bill.account_id:
+        return None
+    return (
+        db.query(Transaction)
+        .filter(
+            Transaction.type == TxType.expense,
+            Transaction.account_id == bill.account_id,
+            Transaction.amount == bill.amount,
+            Transaction.merchant == bill.name,
+            Transaction.date >= start,
+            Transaction.date <= end,
+        )
+        .first()
+    )
+
+
+def pending_recurring_for_month(db: Session, month: str) -> list[RecurringBill]:
+    """
+    本月应计入支出、但尚未落成流水的定期账单。
+    口径：月频 + next_due 落在本月 + 有账户 + 无同月匹配流水。
+    """
+    start, end = _month_range(month)
+    pending: list[RecurringBill] = []
+    for bill in db.query(RecurringBill).order_by(RecurringBill.next_due).all():
+        if bill.frequency != BillFrequency.monthly:
+            continue
+        if not bill.account_id:
+            logger.warning("定期账单缺少账户，统计时跳过 bill=%s id=%s", bill.name, bill.id)
+            continue
+        if not (start <= bill.next_due <= end):
+            continue
+        if _expense_tx_matches_bill(db, bill, start, end):
+            continue
+        pending.append(bill)
+    total = sum((b.amount for b in pending), Decimal("0"))
+    logger.info(
+        "本月待落账定期账单 month=%s count=%s amount=%s names=%s",
+        month,
+        len(pending),
+        total,
+        [b.name for b in pending],
+    )
+    return pending
+
+
 def materialize_recurring_for_month(
     db: Session,
     month: str,
@@ -88,20 +135,19 @@ def materialize_recurring_for_month(
             logger.warning("定期账单缺少账户，跳过 bill=%s id=%s", bill.name, bill.id)
             skipped += 1
             continue
+        # 仅落账「本月到期」的账单，避免把未来周期提前写入
+        if not (start <= bill.next_due <= end):
+            logger.info(
+                "定期账单不在本月到期，跳过 bill=%s next_due=%s month=%s",
+                bill.name,
+                bill.next_due,
+                month,
+            )
+            skipped += 1
+            continue
 
         tx_date = date(start.year, start.month, min(bill.next_due.day, end.day))
-        exists = (
-            db.query(Transaction)
-            .filter(
-                Transaction.type == TxType.expense,
-                Transaction.account_id == bill.account_id,
-                Transaction.amount == bill.amount,
-                Transaction.merchant == bill.name,
-                Transaction.date >= start,
-                Transaction.date <= end,
-            )
-            .first()
-        )
+        exists = _expense_tx_matches_bill(db, bill, start, end)
         if exists:
             logger.info("定期账单本月已有流水，跳过 bill=%s tx_id=%s", bill.name, exists.id)
             skipped += 1
@@ -129,11 +175,9 @@ def materialize_recurring_for_month(
             bill.account_id,
         )
 
-        # next_due 仍落在本月（含过期未滚动）时推进到下一周期
-        if start <= bill.next_due <= end:
-            before = bill.next_due
-            bill.next_due = _add_months(bill.next_due, 1)
-            logger.info("推进定期账单 next_due bill=%s %s -> %s", bill.name, before, bill.next_due)
+        before = bill.next_due
+        bill.next_due = _add_months(bill.next_due, 1)
+        logger.info("推进定期账单 next_due bill=%s %s -> %s", bill.name, before, bill.next_due)
 
     db.commit()
     logger.info("定期账单落账完成 month=%s created=%s skipped=%s", month, created, skipped)
@@ -334,29 +378,52 @@ def get_dashboard(db: Session, month: str) -> DashboardOut:
     mv_by_account = _holdings_mv_by_account(db)
     holding_total = sum(mv_by_account.values(), Decimal("0"))
 
-    monthly_expense = (
-        db.query(func.coalesce(func.sum(Transaction.amount), 0))
-        .filter(
-            Transaction.type == TxType.expense,
-            Transaction.date >= start,
-            Transaction.date <= end,
+    expense_booked = Decimal(
+        str(
+            db.query(func.coalesce(func.sum(Transaction.amount), 0))
+            .filter(
+                Transaction.type == TxType.expense,
+                Transaction.date >= start,
+                Transaction.date <= end,
+            )
+            .scalar()
+            or 0
         )
-        .scalar()
-        or Decimal("0")
     )
 
-    monthly_income = (
-        db.query(func.coalesce(func.sum(Transaction.amount), 0))
-        .filter(
-            Transaction.type == TxType.income,
-            Transaction.date >= start,
-            Transaction.date <= end,
+    pending_bills = pending_recurring_for_month(db, month)
+    expense_recurring_pending = sum((b.amount for b in pending_bills), Decimal("0"))
+    # 本月支出 = 已记账流水 + 本月到期尚未落账的定期账单（避免漏计房租/房贷等）
+    monthly_expense = expense_booked + expense_recurring_pending
+    logger.info(
+        "本月支出口径 month=%s booked=%s recurring_pending=%s total=%s",
+        month,
+        expense_booked,
+        expense_recurring_pending,
+        monthly_expense,
+    )
+
+    monthly_income = Decimal(
+        str(
+            db.query(func.coalesce(func.sum(Transaction.amount), 0))
+            .filter(
+                Transaction.type == TxType.income,
+                Transaction.date >= start,
+                Transaction.date <= end,
+            )
+            .scalar()
+            or 0
         )
-        .scalar()
-        or Decimal("0")
     )
 
     cash_flow = monthly_income - monthly_expense
+
+    pending_by_category: dict = {}
+    for bill in pending_bills:
+        if bill.category_id:
+            pending_by_category[bill.category_id] = (
+                pending_by_category.get(bill.category_id, Decimal("0")) + bill.amount
+            )
 
     budgets = db.query(Budget).filter(Budget.period == month).all()
     total_budget = sum(b.amount for b in budgets) or Decimal("1")
@@ -364,17 +431,20 @@ def get_dashboard(db: Session, month: str) -> DashboardOut:
     budget_items: list[BudgetCategoryItem] = []
 
     for b in budgets:
-        spent = (
-            db.query(func.coalesce(func.sum(Transaction.amount), 0))
-            .filter(
-                Transaction.category_id == b.category_id,
-                Transaction.type == TxType.expense,
-                Transaction.date >= start,
-                Transaction.date <= end,
+        spent = Decimal(
+            str(
+                db.query(func.coalesce(func.sum(Transaction.amount), 0))
+                .filter(
+                    Transaction.category_id == b.category_id,
+                    Transaction.type == TxType.expense,
+                    Transaction.date >= start,
+                    Transaction.date <= end,
+                )
+                .scalar()
+                or 0
             )
-            .scalar()
-            or Decimal("0")
         )
+        spent += pending_by_category.get(b.category_id, Decimal("0"))
         total_spent += spent
         cat = db.query(Category).filter(Category.id == b.category_id).first()
         usage = float(spent / b.amount * 100) if b.amount else 0
@@ -391,6 +461,7 @@ def get_dashboard(db: Session, month: str) -> DashboardOut:
     budget_usage_pct = float(total_spent / total_budget * 100) if total_budget else 0
 
     year = int(month.split("-")[0])
+    month_num = int(month.split("-")[1])
     trends: list[TrendItem] = []
     for m in range(1, 13):
         m_start = date(year, m, 1)
@@ -401,12 +472,17 @@ def get_dashboard(db: Session, month: str) -> DashboardOut:
             .scalar()
             or Decimal("0")
         )
-        exp = (
-            db.query(func.coalesce(func.sum(Transaction.amount), 0))
-            .filter(Transaction.type == TxType.expense, Transaction.date >= m_start, Transaction.date <= m_end)
-            .scalar()
-            or Decimal("0")
+        exp = Decimal(
+            str(
+                db.query(func.coalesce(func.sum(Transaction.amount), 0))
+                .filter(Transaction.type == TxType.expense, Transaction.date >= m_start, Transaction.date <= m_end)
+                .scalar()
+                or 0
+            )
         )
+        # 当前查看月补上待落账定期，与「本月支出」同口径
+        if m == month_num:
+            exp += expense_recurring_pending
         trends.append(TrendItem(month=f"{m}月", income=inc, expense=exp))
 
     invest_cash = Decimal("0")
@@ -478,6 +554,8 @@ def get_dashboard(db: Session, month: str) -> DashboardOut:
     return DashboardOut(
         net_worth=net_worth,
         monthly_expense=monthly_expense,
+        expense_booked=expense_booked,
+        expense_recurring_pending=expense_recurring_pending,
         budget_usage_pct=round(budget_usage_pct, 1),
         investment_return=investment_return,
         cash_flow=cash_flow,
@@ -607,13 +685,18 @@ def get_monthly_report(db: Session, month: str) -> MonthlyReport:
         .scalar()
         or Decimal("0")
     )
-    total_expense = (
-        db.query(func.coalesce(func.sum(Transaction.amount), 0))
-        .filter(Transaction.type == TxType.expense, Transaction.date >= start, Transaction.date <= end)
-        .scalar()
-        or Decimal("0")
+    expense_booked = Decimal(
+        str(
+            db.query(func.coalesce(func.sum(Transaction.amount), 0))
+            .filter(Transaction.type == TxType.expense, Transaction.date >= start, Transaction.date <= end)
+            .scalar()
+            or 0
+        )
     )
+    pending_bills = pending_recurring_for_month(db, month)
+    total_expense = expense_booked + sum((b.amount for b in pending_bills), Decimal("0"))
 
+    by_cat_map: dict[str, Decimal] = {}
     by_cat = (
         db.query(Category.name, func.sum(Transaction.amount))
         .join(Transaction, Transaction.category_id == Category.id)
@@ -621,11 +704,29 @@ def get_monthly_report(db: Session, month: str) -> MonthlyReport:
         .group_by(Category.name)
         .all()
     )
+    for c, a in by_cat:
+        by_cat_map[c] = Decimal(str(a))
+
+    for bill in pending_bills:
+        if not bill.category_id:
+            by_cat_map["未分类定期"] = by_cat_map.get("未分类定期", Decimal("0")) + bill.amount
+            continue
+        cat = db.query(Category).filter(Category.id == bill.category_id).first()
+        name = cat.name if cat else "未分类定期"
+        by_cat_map[name] = by_cat_map.get(name, Decimal("0")) + bill.amount
+
+    logger.info(
+        "月报支出口径 month=%s booked=%s pending=%s total=%s",
+        month,
+        expense_booked,
+        total_expense - expense_booked,
+        total_expense,
+    )
 
     return MonthlyReport(
         month=month,
         total_income=total_income,
         total_expense=total_expense,
         net=total_income - total_expense,
-        by_category=[{"category": c, "amount": a} for c, a in by_cat],
+        by_category=[{"category": c, "amount": a} for c, a in by_cat_map.items()],
     )

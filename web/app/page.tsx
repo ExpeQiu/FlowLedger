@@ -10,14 +10,42 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } fro
 export default function DashboardPage() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [hideAmounts, setHideAmounts] = useState(false);
+  const [materializing, setMaterializing] = useState(false);
   const month = currentMonth();
 
-  useEffect(() => {
+  const load = () =>
     api.dashboard(month).then(setData).catch((e) => toast.error(e.message));
+
+  useEffect(() => {
+    load();
   }, [month]);
+
+  const materialize = async () => {
+    setMaterializing(true);
+    try {
+      const r = await api.materializeRecurring(month);
+      toast.success(`已落账 ${r.created} 笔定期支出，跳过 ${r.skipped} 笔`);
+      await load();
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setMaterializing(false);
+    }
+  };
+
+  const pending = Number(data?.expense_recurring_pending ?? 0);
+  const booked = Number(data?.expense_booked ?? data?.monthly_expense ?? 0);
 
   const actions = (
     <>
+      <button
+        className="btn"
+        disabled={materializing || pending <= 0}
+        onClick={materialize}
+        title="将本月到期定期账单写入支出流水"
+      >
+        {materializing ? "落账中…" : pending > 0 ? `落账定期 (${fmt(pending)})` : "定期已落账"}
+      </button>
       <Link href="/expenses" className="btn no-underline">导入</Link>
       <Link href="/expenses" className="btn btn-primary no-underline">记一笔</Link>
       <button className="btn btn-icon" title="隐藏金额" onClick={() => setHideAmounts(!hideAmounts)}>👁</button>
@@ -32,6 +60,11 @@ export default function DashboardPage() {
     );
   }
 
+  const expenseSub =
+    pending > 0
+      ? `流水 ${fmt(booked)} + 定期 ${fmt(pending)}`
+      : "已发生（含已落账定期）";
+
   return (
     <div className={hideAmounts ? "hide-amounts" : ""}>
       <AppShell
@@ -41,9 +74,15 @@ export default function DashboardPage() {
       >
         <div className="grid grid-cols-4 gap-4">
           <MetricCard label="净资产" sub="当前" value={fmt(data.net_worth)} />
-          <MetricCard label="本月支出" sub="已发生" value={fmt(data.monthly_expense)} delta={`预算 ${data.budget_usage_pct}%`} deltaVariant="warn" />
+          <MetricCard
+            label="本月支出"
+            sub={expenseSub}
+            value={fmt(data.monthly_expense)}
+            delta={`预算 ${data.budget_usage_pct}%`}
+            deltaVariant="warn"
+          />
           <MetricCard label="投资浮盈" sub="持仓未实现" value={fmt(data.investment_return)} />
-          <MetricCard label="现金流" sub="本月" value={fmt(data.cash_flow)} />
+          <MetricCard label="现金流" sub="本月收入−支出" value={fmt(data.cash_flow)} />
         </div>
 
         <div className="grid gap-4 mt-4" style={{ gridTemplateColumns: "1.45fr 0.75fr" }}>
