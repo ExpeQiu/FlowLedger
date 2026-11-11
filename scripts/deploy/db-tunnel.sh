@@ -37,10 +37,21 @@ fi
 ARGS=(-N -L "${LOCAL_PORT}:127.0.0.1:${REMOTE_PORT}" -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o BatchMode=yes "root@${HOST}")
 
 if [[ "${1:-}" == "-d" || "${1:-}" == "--daemon" ]]; then
-  ssh "${ARGS[@]}" &
-  echo $! > "$PID_FILE"
+  # 用 ssh -f（认证并绑定端口成功后才后台化）替代 ssh &，修两个问题：
+  #   1) ssh & 会继承 stdout/stderr → 调用方管道永不 EOF
+  #      （2026-11-12 实测：push-db-to-cloud.sh | tail 挂死 10 分钟不退）
+  #   2) 两个实例并发时，守卫检查到端口空闲 → 双双启动 → 后启动者
+  #      报 "Address already in use" 且覆盖 PID 文件（err 日志刷屏的根因）
+  #      ssh -f 只有绑定成功才后台化，失败则直接退出并返回非 0
+  ssh -f "${ARGS[@]}" </dev/null >/dev/null 2>"${TMPDIR:-/tmp}/flowledger-db-tunnel.err"
   sleep 1
-  echo "[tunnel] 后台 PID=$(cat "$PID_FILE") · 127.0.0.1:${LOCAL_PORT} → ${HOST}:5432"
+  TUNNEL_PID="$(pgrep -f "ssh .*-L ${LOCAL_PORT}:127.0.0.1:${REMOTE_PORT}" 2>/dev/null | head -1 || true)"
+  if [[ -z "$TUNNEL_PID" ]]; then
+    echo "[tunnel] ✗ 启动失败，详见 ${TMPDIR:-/tmp}/flowledger-db-tunnel.err" >&2
+    exit 1
+  fi
+  echo "$TUNNEL_PID" > "$PID_FILE"
+  echo "[tunnel] 后台 PID=${TUNNEL_PID} · 127.0.0.1:${LOCAL_PORT} → ${HOST}:${REMOTE_PORT}"
 else
   echo "[tunnel] 前台转发 127.0.0.1:${LOCAL_PORT} → ${HOST}:${REMOTE_PORT}（Ctrl+C 结束）"
   exec ssh "${ARGS[@]}"

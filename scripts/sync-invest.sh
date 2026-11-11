@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 从 invest.lcteam 同步真实持仓到 flowledger
+# 从 invest.hermesbrain 同步真实持仓到 flowledger（与 stock 看板同源）
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

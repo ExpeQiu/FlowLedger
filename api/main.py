@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from auth_internal import InternalTokenMiddleware, _expected_token
 from logging_config import logger
 from routes.accounts import router as accounts_router
 from routes.budgets import router as budgets_router
@@ -22,6 +23,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(InternalTokenMiddleware)
 
 app.include_router(accounts_router)
 app.include_router(categories_router)
@@ -44,4 +46,4 @@ def health():
 
 @app.on_event("startup")
 def on_startup():
-    logger.info("FlowLedger API 启动")
+    logger.info("FlowLedger API 启动 internal_auth=%s", bool(_expected_token()))

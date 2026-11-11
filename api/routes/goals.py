@@ -88,6 +88,22 @@ def create_bill(data: RecurringBillCreate, db: Session = Depends(get_db)):
     return b
 
 
+@bills_router.post("/materialize-due")
+def materialize_due(
+    as_of: Optional[str] = None,
+    adjust_balance: bool = True,
+    db: Session = Depends(get_db),
+):
+    """落账已到期的自动账单（auto_create=true），按 next_due 精确到日。供定时任务调用。"""
+    from datetime import date as _date
+
+    from services.finance import materialize_due_bills
+
+    target = _date.fromisoformat(as_of) if as_of else _date.today()
+    logger.info("API 落账到期自动账单 as_of=%s adjust_balance=%s", target, adjust_balance)
+    return materialize_due_bills(db, as_of=target, adjust_balance=adjust_balance)
+
+
 @bills_router.post("/materialize")
 def materialize_bills(
     month: Optional[str] = None,

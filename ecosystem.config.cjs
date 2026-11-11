@@ -16,6 +16,7 @@ module.exports = {
       max_memory_restart: "256M",
       env: {
         PYTHONUNBUFFERED: "1",
+        INTERNAL_TOKEN: process.env.INTERNAL_TOKEN || "",
       },
       error_file: "../logs/pm2-api-error.log",
       out_file: "../logs/pm2-api-out.log",
@@ -36,6 +37,7 @@ module.exports = {
         NODE_OPTIONS: "--max-old-space-size=512",
         PORT: 8900,
         API_INTERNAL_URL: "http://127.0.0.1:9011",
+        INTERNAL_TOKEN: process.env.INTERNAL_TOKEN || "",
       },
       error_file: "../logs/pm2-web-error.log",
       out_file: "../logs/pm2-web-out.log",

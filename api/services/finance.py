@@ -105,6 +105,112 @@ def pending_recurring_for_month(db: Session, month: str) -> list[RecurringBill]:
     return pending
 
 
+def materialize_due_bills(
+    db: Session,
+    *,
+    as_of: Optional[date] = None,
+    adjust_balance: bool = True,
+) -> dict:
+    """
+    落账「已到 next_due 且 auto_create=true」的定期账单（按 next_due 精确到日）。
+
+    与 materialize_recurring_for_month 的区别：
+    - 粒度：按 next_due 逐笔到期日落账（如房租 1 号、养老金 10 号），而非整月打包
+    - 过滤：只处理 auto_create=true 的账单（手工维护的账单不受影响）
+    - 幂等：同月同账户同金额同商户已有流水则跳过，不会重复出账
+    - 漏月补偿：next_due 落在过去月份时，按当前账单金额补记该月（金额以现账单为准）
+    """
+    today = as_of or date.today()
+    created = 0
+    skipped = 0
+    backfilled = 0
+    bills = (
+        db.query(RecurringBill)
+        .filter(RecurringBill.auto_create.is_(True))
+        .order_by(RecurringBill.next_due)
+        .all()
+    )
+    logger.info(
+        "开始按日落账自动账单 as_of=%s bills=%s adjust_balance=%s",
+        today,
+        len(bills),
+        adjust_balance,
+    )
+
+    for bill in bills:
+        if bill.frequency != BillFrequency.monthly:
+            skipped += 1
+            continue
+        if not bill.account_id:
+            logger.warning("自动账单缺少账户，跳过 bill=%s id=%s", bill.name, bill.id)
+            skipped += 1
+            continue
+        if bill.next_due > today:
+            # 还没到期（含未来月份），跳过
+            skipped += 1
+            continue
+
+        # next_due 所在月
+        month_key = f"{bill.next_due.year:04d}-{bill.next_due.month:02d}"
+        start, end = _month_range(month_key)
+
+        # 漏月补偿：next_due 已落在过去且该月无流水 → 补记（金额按当前账单）
+        exists = _expense_tx_matches_bill(db, bill, start, end)
+        if exists:
+            skipped += 1
+        else:
+            tx = Transaction(
+                type=TxType.expense,
+                amount=bill.amount,
+                date=bill.next_due,
+                account_id=bill.account_id,
+                category_id=bill.category_id,
+                merchant=bill.name,
+                note=bill.note or f"定期账单 {month_key}",
+                source=TxSource.rule,
+            )
+            db.add(tx)
+            if adjust_balance:
+                apply_transaction_to_balance(db, bill.account_id, TxType.expense, bill.amount)
+            created += 1
+            if bill.next_due < today.replace(day=1):
+                backfilled += 1
+                logger.info(
+                    "补记历史月账单 bill=%s amount=%s date=%s",
+                    bill.name,
+                    bill.amount,
+                    bill.next_due,
+                )
+            else:
+                logger.info(
+                    "落账到期自动账单 bill=%s amount=%s date=%s",
+                    bill.name,
+                    bill.amount,
+                    bill.next_due,
+                )
+
+        # 推进到下一个周期
+        before = bill.next_due
+        bill.next_due = _add_months(bill.next_due, 1)
+        logger.info("推进自动账单 next_due bill=%s %s -> %s", bill.name, before, bill.next_due)
+
+    db.commit()
+    logger.info(
+        "自动账单落账完成 as_of=%s created=%s skipped=%s backfilled=%s",
+        today,
+        created,
+        skipped,
+        backfilled,
+    )
+    return {
+        "as_of": str(today),
+        "created": created,
+        "skipped": skipped,
+        "backfilled": backfilled,
+        "adjust_balance": adjust_balance,
+    }
+
+
 def materialize_recurring_for_month(
     db: Session,
     month: str,

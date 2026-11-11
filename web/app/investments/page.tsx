@@ -66,7 +66,7 @@ export default function InvestmentsPage() {
   return (
     <AppShell
       title="投资管理"
-      subtitle="数据源：invest.lcteam 真实持仓"
+      subtitle="数据源：invest.hermesbrain 真实持仓（与 stock 同源）"
       actions={<button className="btn btn-primary" onClick={sync}>同步最新持仓</button>}
     >
       {data.validation_ok === false && (
@@ -122,7 +122,7 @@ export default function InvestmentsPage() {
           </ResponsiveContainer>
         ) : (
           <p className="text-sm text-[var(--muted)] m-0 py-8 text-center">
-            暂无本月快照数据，请确认 invest 库已写入 position_snapshots
+            暂无本月快照数据，请确认 invest.hermesbrain.holdings_snapshots 已写入
           </p>
         )}
       </article>

@@ -37,7 +37,7 @@ FlowLedger 是本地优先的个人财务管理系统，数据存储在 PostgreS
 
 ```mermaid
 flowchart LR
-  InvestDB[(invest.lcteam<br/>positions / snapshots)] -->|sync-from-invest| Svc[finance 聚合与校验]
+  InvestDB[(invest.hermesbrain<br/>holdings_snapshots / detail)] -->|sync-from-invest| Svc[finance 聚合与校验]
   FLDB[(flowledger<br/>accounts / holdings)] --> Svc
   Svc --> AccAPI["/api/accounts"]
   Svc --> HolAPI["/api/holdings/summary"]
@@ -47,7 +47,7 @@ flowchart LR
   Dash --> WebHome[总览]
 ```
 
-权威源：`invest.lcteam.position_snapshots` + `positions(account_type=real)`。  
+权威源：`invest.hermesbrain.holdings_snapshots` + `holdings_detail`（与 stock 看板同源，优先级 manual > pg-1615 > openclaw-launchd）。hermesbrain 不可用时回退 `lcteam.position_snapshots`。  
 同步命令：`./scripts/sync-invest.sh` 或 `POST /api/holdings/sync-from-invest`。
 
 ## API 端点
@@ -63,9 +63,9 @@ flowchart LR
 | CRUD /api/budgets | 预算 |
 | CRUD /api/holdings | 持仓 |
 | GET /api/holdings/summary | 投资组合（含现金拆分） |
-| GET /api/holdings/daily-pnl | 指定月每日收益波动（invest snapshots） |
+| GET /api/holdings/daily-pnl | 指定月每日收益波动（hermesbrain 快照） |
 | GET /api/holdings/validate | 投资账户与持仓一致性校验 |
-| POST /api/holdings/sync-from-invest | 从 invest.lcteam 同步真实持仓 |
+| POST /api/holdings/sync-from-invest | 从 invest.hermesbrain 同步真实持仓 |
 | CRUD /api/liabilities | 负债 |
 | CRUD /api/goals | 财务目标 |
 | GET/POST /api/recurring-bills | 定期账单 |

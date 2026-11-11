@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import datetime, time
+from datetime import date, datetime, time
 from typing import Optional
 from uuid import UUID, uuid4
 
@@ -182,6 +182,8 @@ def list_transactions(
     category_id: Optional[UUID] = None,
     account_id: Optional[UUID] = None,
     search: Optional[str] = None,
+    start: Optional[date] = None,
+    end: Optional[date] = None,
     limit: int = Query(50, le=200),
 ):
     # 先把历史 expense+income 划拨归一为 transfer，避免开支页误展示
@@ -203,6 +205,10 @@ def list_transactions(
         q = q.filter(
             (Transaction.merchant.ilike(f"%{search}%")) | (Transaction.note.ilike(f"%{search}%"))
         )
+    if start:
+        q = q.filter(Transaction.date >= start)
+    if end:
+        q = q.filter(Transaction.date <= end)
     txs = q.order_by(Transaction.date.desc(), Transaction.created_at.desc()).limit(limit).all()
     logger.info(
         "查询流水 count=%s type=%s account_id=%s exclude_transfer=%s",

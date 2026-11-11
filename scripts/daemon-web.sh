@@ -60,4 +60,8 @@ done
 
 log "exec next dev :$WEB_PORT"
 cd "$ROOT/web"
-exec "$NODE_BIN" "$NEXT_JS" dev -p "$WEB_PORT" -H 127.0.0.1
+# 2026-11-02 修复：本机 Next.js 16.2.10 的 turbopack 不支持该平台，
+# `next dev` 会直接退出并报 "use next dev --webpack"，
+# 触发 launchd KeepAlive 无限重启（60s 内 11 次，5011 端口始终无监听）。
+# 显式加 --webpack 后可正常启动。
+exec "$NODE_BIN" "$NEXT_JS" dev -p "$WEB_PORT" -H 127.0.0.1 --webpack

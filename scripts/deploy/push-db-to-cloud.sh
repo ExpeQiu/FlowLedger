@@ -8,12 +8,39 @@ cd "$ROOT"
 LOG_DIR="$ROOT/logs"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/push-db-to-cloud.log"
+LOCK_DIR="$LOG_DIR/push-db-to-cloud.lockdir"
 STAMP="$(date '+%Y%m%d-%H%M%S')"
 DUMP="/tmp/flowledger-push-$STAMP.sql"
+STRIPPED="/tmp/flowledger-push-$STAMP.pg16.sql"
 DRY=0
 [[ "${1:-}" == "--dry-run" ]] && DRY=1
 
 log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG"; }
+
+release_lock() { rm -rf "$LOCK_DIR" 2>/dev/null || true; }
+cleanup() {
+  rm -f "$DUMP" "$STRIPPED" 2>/dev/null || true
+  release_lock
+}
+trap cleanup EXIT
+
+# macOS 无 flock：目录锁。上一趟仍在跑则跳过，死锁可回收
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  old_pid="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
+  if [[ -n "${old_pid}" ]] && kill -0 "${old_pid}" 2>/dev/null; then
+    log "↷ 已有推送在跑 pid=${old_pid}，跳过 $STAMP"
+    trap - EXIT
+    exit 0
+  fi
+  log "warn: stale lock, retry"
+  rm -rf "$LOCK_DIR"
+  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    log "↷ 无法取得锁，跳过 $STAMP"
+    trap - EXIT
+    exit 0
+  fi
+fi
+echo $$ >"$LOCK_DIR/pid"
 
 # shellcheck disable=SC1091
 [[ -f "$ROOT/.env.cloud.local" ]] && set -a && source "$ROOT/.env.cloud.local" && set +a
@@ -43,24 +70,21 @@ fi
 
 log "▶ pg_dump flowledger"
 pg_dump -Fp --no-owner --no-acl --clean --if-exists "$LOCAL_URL" -f "$DUMP"
-STRIPPED="/tmp/flowledger-push-$STAMP.pg16.sql"
 python3 "$ROOT/scripts/deploy/strip-pg18-dump.py" "$DUMP" "$STRIPPED"
 log "✓ dump $(wc -c <"$STRIPPED" | tr -d ' ') bytes"
 
 if [[ "$DRY" -eq 1 ]]; then
   log "↷ dry-run"
-  rm -f "$DUMP" "$STRIPPED"
   exit 0
 fi
 
-log "▶ 恢复到云端"
+log "▶ 恢复到云端（单事务，失败则回滚）"
 set +e
-psql "$CLOUD_URL" -v ON_ERROR_STOP=1 -f "$STRIPPED" >>"$LOG" 2>&1
+psql "$CLOUD_URL" -v ON_ERROR_STOP=1 --single-transaction -f "$STRIPPED" >>"$LOG" 2>&1
 RC=$?
 set -e
-rm -f "$DUMP" "$STRIPPED"
 if [[ "$RC" -ne 0 ]]; then
-  log "✗ 恢复失败，详见 $LOG"
+  log "✗ 恢复失败 rc=$RC，详见 $LOG"
   exit 1
 fi
 log "✓ 云端恢复完成"

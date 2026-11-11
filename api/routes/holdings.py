@@ -61,7 +61,7 @@ def portfolio_summary(db: Session = Depends(get_db)):
 
 @router.get("/daily-pnl", response_model=MonthlyDailyPnlOut)
 def monthly_daily_pnl(month: str | None = None):
-    """本月（或指定月）每日收益波动，数据来自 invest.lcteam.position_snapshots。"""
+    """本月（或指定月）每日收益波动，数据来自 invest.hermesbrain.holdings_snapshots。"""
     try:
         return fetch_monthly_daily_pnl(month)
     except ValueError as e:
@@ -80,7 +80,7 @@ def validate_holdings(db: Session = Depends(get_db)):
 
 @router.post("/sync-from-invest")
 def sync_from_invest(db: Session = Depends(get_db)):
-    """从 invest.lcteam 同步真实持仓与账户总资产。"""
+    """从 invest.hermesbrain 同步真实持仓与账户总资产（与 stock 看板同源）。"""
     try:
         result = sync_invest_to_flowledger(db)
     except Exception as e:
