@@ -11,7 +11,9 @@ set -euo pipefail
 HOST="${DEPLOY_HOST:-120.25.145.131}"
 LOCAL_PORT="${FLOWLEDGER_TUNNEL_LOCAL_PORT:-15433}"
 REMOTE_PORT=5432
-PID_FILE="${TMPDIR:-/tmp}/flowledger-db-tunnel.pid"
+# PID 文件固定放 /tmp：launchd 与交互 shell 的 TMPDIR 不同（launchd 无 TMPDIR 或为
+# /var/folders/...），用 TMPDIR 会导致 --stop 在另一个上下文找不到 PID 文件、杀不掉隧道
+PID_FILE="${FLOWLEDGER_TUNNEL_PID_FILE:-/tmp/flowledger-db-tunnel.pid}"
 
 stop_tunnel() {
   if [[ -f "$PID_FILE" ]]; then
@@ -45,7 +47,12 @@ if [[ "${1:-}" == "-d" || "${1:-}" == "--daemon" ]]; then
   #      ssh -f 只有绑定成功才后台化，失败则直接退出并返回非 0
   ssh -f "${ARGS[@]}" </dev/null >/dev/null 2>"${TMPDIR:-/tmp}/flowledger-db-tunnel.err"
   sleep 1
-  TUNNEL_PID="$(pgrep -f "ssh .*-L ${LOCAL_PORT}:127.0.0.1:${REMOTE_PORT}" 2>/dev/null | head -1 || true)"
+  # 以"真正持有监听 socket 的进程"为准：ssh -f 会 fork，父进程很快退出，
+  # pgrep 抓到的是短命父进程 → PID 文件记错 → --stop 杀不掉、留下僵尸隧道占端口
+  TUNNEL_PID="$(lsof -nP -iTCP:"${LOCAL_PORT}" -sTCP:LISTEN -t 2>/dev/null | head -1 || true)"
+  if [[ -z "$TUNNEL_PID" ]]; then
+    TUNNEL_PID="$(pgrep -f "ssh .*-L ${LOCAL_PORT}:127.0.0.1:${REMOTE_PORT}" 2>/dev/null | head -1 || true)"
+  fi
   if [[ -z "$TUNNEL_PID" ]]; then
     echo "[tunnel] ✗ 启动失败，详见 ${TMPDIR:-/tmp}/flowledger-db-tunnel.err" >&2
     exit 1
