@@ -175,6 +175,8 @@ class RecurringBill(Base):
     next_due: Mapped[date] = mapped_column(Date, nullable=False)
     category_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("categories.id"), nullable=True)
     account_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("accounts.id"), nullable=True)
+    # 出资账户（方案A）：账单需先由该账户转入资金；落账时自动配一笔配对转账，余额不漂
+    funding_account_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("accounts.id"), nullable=True)
     auto_create: Mapped[bool] = mapped_column(default=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

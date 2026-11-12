@@ -6,13 +6,14 @@ from sqlalchemy.orm import Session, joinedload
 
 from database import get_db
 from logging_config import logger
-from models import Category, Goal, RecurringBill, Rule
+from models import Account, Category, Goal, RecurringBill, Rule
 from schemas import (
     GoalCreate,
     GoalOut,
     GoalUpdate,
     RecurringBillCreate,
     RecurringBillOut,
+    RecurringBillUpdate,
     RuleCreate,
     RuleOut,
 )
@@ -85,6 +86,27 @@ def create_bill(data: RecurringBillCreate, db: Session = Depends(get_db)):
     db.add(b)
     db.commit()
     db.refresh(b)
+    return b
+
+
+@bills_router.patch("/{bill_id}", response_model=RecurringBillOut)
+def update_bill(bill_id: UUID, data: RecurringBillUpdate, db: Session = Depends(get_db)):
+    """更新定期账单（含出资账户 funding_account_id：账单落账时自动配一笔转账）。"""
+    b = db.query(RecurringBill).filter(RecurringBill.id == bill_id).first()
+    if not b:
+        raise HTTPException(404, "定期账单不存在")
+    payload = data.model_dump(exclude_unset=True)
+    if "funding_account_id" in payload and payload["funding_account_id"]:
+        if not db.query(Account).filter(Account.id == payload["funding_account_id"]).first():
+            raise HTTPException(404, "出资账户不存在")
+    if "account_id" in payload and payload["account_id"]:
+        if not db.query(Account).filter(Account.id == payload["account_id"]).first():
+            raise HTTPException(404, "账单账户不存在")
+    for k, v in payload.items():
+        setattr(b, k, v)
+    db.commit()
+    db.refresh(b)
+    logger.info("更新定期账单 bill=%s id=%s payload=%s", b.name, b.id, payload)
     return b
 
 

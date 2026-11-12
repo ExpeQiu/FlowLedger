@@ -196,7 +196,20 @@ class RecurringBillCreate(BaseModel):
     next_due: date
     category_id: Optional[UUID] = None
     account_id: Optional[UUID] = None
+    funding_account_id: Optional[UUID] = None
     auto_create: bool = False
+    note: Optional[str] = None
+
+
+class RecurringBillUpdate(BaseModel):
+    name: Optional[str] = None
+    amount: Optional[Decimal] = None
+    frequency: Optional[BillFrequency] = None
+    next_due: Optional[date] = None
+    category_id: Optional[UUID] = None
+    account_id: Optional[UUID] = None
+    funding_account_id: Optional[UUID] = None
+    auto_create: Optional[bool] = None
     note: Optional[str] = None
 
 
@@ -210,6 +223,7 @@ class RecurringBillOut(BaseModel):
     next_due: date
     category_id: Optional[UUID]
     account_id: Optional[UUID]
+    funding_account_id: Optional[UUID]
     auto_create: bool
     note: Optional[str]
 

@@ -1,4 +1,5 @@
 import hashlib
+import re
 from calendar import monthrange
 from datetime import date, timedelta
 from decimal import Decimal
@@ -44,6 +45,9 @@ from schemas import (
 INVEST_ACCOUNT_TYPES = {AccountType.broker, AccountType.fund}
 # 允许账户余额与「持仓市值」之间的合理差额（闲置现金）；余额低于持仓市值超过该阈值则告警
 HOLDINGS_OVER_BALANCE_TOLERANCE = Decimal("1.00")
+# 账户间划拨的腿标记：单一定义，落账层与路由层共用，避免两处写死不一致
+TRANSFER_OUT_MARK = "transfer_out"
+TRANSFER_IN_MARK = "transfer_in"
 
 
 def _month_range(period: str) -> tuple[date, date]:
@@ -105,6 +109,94 @@ def pending_recurring_for_month(db: Session, month: str) -> list[RecurringBill]:
     return pending
 
 
+def _funding_covers_month(db: Session, bill: RecurringBill, month_key: str) -> bool:
+    """
+    该账单当月是否已被配套出资转账覆盖（幂等判断，避免重复配款）。
+
+    备注里既可能是单月（如「房贷月供转入 2026-12」），
+    也可能是区间（如「房贷月供转入 2026-07~2026-10」的一笔 ¥11,000），
+    两种都要认，否则区间覆盖的月份会被重复配款。
+    """
+    rows = (
+        db.query(Transaction)
+        .filter(
+            Transaction.type == TxType.transfer,
+            Transaction.merchant == TRANSFER_IN_MARK,
+            Transaction.account_id == bill.account_id,
+            Transaction.note.ilike(f"%{bill.name}月供转入%"),
+        )
+        .all()
+    )
+    for row in rows:
+        months = re.findall(r"\d{4}-\d{2}", row.note or "")
+        if not months:
+            continue
+        if month_key in months:
+            return True
+        if len(months) >= 2 and months[0] <= month_key <= months[-1]:
+            return True
+    return False
+
+
+def _create_funding_transfer(
+    db: Session,
+    bill: RecurringBill,
+    month_key: str,
+    amount: Decimal,
+    *,
+    adjust_balance: bool,
+) -> bool:
+    """
+    方案A：账单落账时自动配一笔「出资账户 → 账单账户」的转账。
+
+    场景：房贷从建设银行卡自动扣款，但钱要先从中国银行卡转过去。
+    只记支出会让建设银行卡余额逐月变负；配一笔转账后：
+      中国银行卡 -2750（转出）、建设银行卡 +2750（转入）、房贷支出 -2750
+      → 建设银行卡净变动 0，账本自洽、余额不漂。
+    """
+    if not bill.funding_account_id or bill.funding_account_id == bill.account_id:
+        return False
+    if _funding_covers_month(db, bill, month_key):
+        logger.info("配套出资转账已存在，跳过 bill=%s month=%s", bill.name, month_key)
+        return False
+
+    pair_id = uuid4()
+    user_note = f"{bill.name}月供转入 {month_key}"
+    out_tx = Transaction(
+        type=TxType.transfer,
+        amount=amount,
+        date=bill.next_due,
+        account_id=bill.funding_account_id,
+        merchant=TRANSFER_OUT_MARK,
+        note=f"转出 · {user_note}",
+        source=TxSource.rule,
+        transfer_pair_id=pair_id,
+    )
+    in_tx = Transaction(
+        type=TxType.transfer,
+        amount=amount,
+        date=bill.next_due,
+        account_id=bill.account_id,
+        merchant=TRANSFER_IN_MARK,
+        note=f"转入 · {user_note}",
+        source=TxSource.rule,
+        transfer_pair_id=pair_id,
+    )
+    db.add(out_tx)
+    db.add(in_tx)
+    if adjust_balance:
+        apply_transaction_to_balance(db, bill.funding_account_id, TxType.expense, amount)
+        apply_transaction_to_balance(db, bill.account_id, TxType.income, amount)
+    logger.info(
+        "自动配套出资转账 bill=%s month=%s pair=%s amount=%s",
+        bill.name,
+        month_key,
+        pair_id,
+        amount,
+    )
+    return True
+
+
 def materialize_due_bills(
     db: Session,
     *,
@@ -124,6 +216,7 @@ def materialize_due_bills(
     created = 0
     skipped = 0
     backfilled = 0
+    funding_created = 0
     bills = (
         db.query(RecurringBill)
         .filter(RecurringBill.auto_create.is_(True))
@@ -158,6 +251,15 @@ def materialize_due_bills(
         exists = _expense_tx_matches_bill(db, bill, start, end)
         if exists:
             skipped += 1
+            # 支出已存在但缺配款（手工先记过支出），仍需补一笔配套转账，否则余额会漂
+            if _create_funding_transfer(
+                db,
+                bill,
+                month_key,
+                bill.amount,
+                adjust_balance=adjust_balance,
+            ):
+                funding_created += 1
         else:
             tx = Transaction(
                 type=TxType.expense,
@@ -173,6 +275,15 @@ def materialize_due_bills(
             if adjust_balance:
                 apply_transaction_to_balance(db, bill.account_id, TxType.expense, bill.amount)
             created += 1
+            # 方案A：支出落账后自动配一笔出资转账（出资账户 → 账单账户），保证余额不漂
+            if _create_funding_transfer(
+                db,
+                bill,
+                month_key,
+                bill.amount,
+                adjust_balance=adjust_balance,
+            ):
+                funding_created += 1
             if bill.next_due < today.replace(day=1):
                 backfilled += 1
                 logger.info(
@@ -196,17 +307,19 @@ def materialize_due_bills(
 
     db.commit()
     logger.info(
-        "自动账单落账完成 as_of=%s created=%s skipped=%s backfilled=%s",
+        "自动账单落账完成 as_of=%s created=%s skipped=%s backfilled=%s funding_transfers=%s",
         today,
         created,
         skipped,
         backfilled,
+        funding_created,
     )
     return {
         "as_of": str(today),
         "created": created,
         "skipped": skipped,
         "backfilled": backfilled,
+        "funding_transfers": funding_created,
         "adjust_balance": adjust_balance,
     }
 

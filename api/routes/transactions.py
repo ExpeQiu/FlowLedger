@@ -10,12 +10,13 @@ from database import get_db
 from logging_config import logger
 from models import Account, Category, Transaction, TxSource, TxType
 from schemas import TransactionCreate, TransactionOut, TransferOut
-from services.finance import apply_transaction_to_balance
+from services.finance import (
+    TRANSFER_IN_MARK,
+    TRANSFER_OUT_MARK,
+    apply_transaction_to_balance,
+)
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
-
-TRANSFER_OUT_MARK = "transfer_out"
-TRANSFER_IN_MARK = "transfer_in"
 # 历史数据常把账户间划拨记成 expense+income，备注含这些关键词时参与识别
 _LEGACY_TRANSFER_HINTS = ("转账", "转出", "转入")
 
